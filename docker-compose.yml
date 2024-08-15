@@ -1,0 +1,46 @@
+version: '3.3'
+
+services:
+  minio_server:
+    user: ${DOCKER_USER}
+    image: minio/minio:latest
+    hostname: minio
+    ports:
+      - "9000:9000"
+      - "9090:9090"
+    environment:
+      MINIO_ROOT_USER: user
+      MINIO_ROOT_PASSWORD: passpass
+    volumes:
+      - $PWD/minio-server:/ms:rw
+    entrypoint:
+      ["minio", "server", "/ms", "--console-address", ":9090"]
+
+  redis_server:
+    user: ${DOCKER_USER}
+    depends_on:
+      - minio_server
+    image: redis:6.0-alpine
+    hostname: redis
+    ports:
+      - "6380:6380"
+    command:
+      ["redis-server", "--port", "6380"]
+
+  minio_client:
+    user: ${DOCKER_USER}
+    depends_on:
+      - minio_server
+      - redis_server
+    build:
+      context: .
+      dockerfile: minio_watcher.Dockerfile
+    volumes:
+      - $PWD/minio-client:/mc:rw
+      - $PWD:/app:rw
+    entrypoint: >
+      /bin/sh -c "
+        mc --config-dir /mc config host add kenya http://minio:9000 user passpass;
+        mc --config-dir /mc ls minio-server/testing-bucket || mc --config-dir /mc mb minio-server/testing-bucket;
+        python3 -u /app/minio_watcher.py
+      "
